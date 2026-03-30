@@ -24,10 +24,15 @@ export function Dashboard() {
     if (!user) return;
 
     const fetchServers = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('server_members')
         .select('servers(*)')
         .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error fetching servers:', error);
+        return;
+      }
 
       if (data) {
         const serverList = data.map((item: any) => item.servers).filter(Boolean);
@@ -39,17 +44,26 @@ export function Dashboard() {
     };
 
     fetchServers();
-  }, [user, currentServer, setCurrentServer]);
+    
+    // Refetch servers every 2 seconds to catch new ones
+    const interval = setInterval(fetchServers, 2000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Fetch channels for current server
   useEffect(() => {
     if (!currentServer) return;
 
     const fetchChannels = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('channels')
         .select('*')
         .eq('server_id', currentServer.id);
+
+      if (error) {
+        console.error('Error fetching channels:', error);
+        return;
+      }
 
       if (data) {
         setChannels(data);
@@ -60,7 +74,7 @@ export function Dashboard() {
     };
 
     fetchChannels();
-  }, [currentServer, currentChannel, setCurrentChannel]);
+  }, [currentServer]);
 
   const handleCreateServer = async (e: React.FormEvent) => {
     e.preventDefault();
