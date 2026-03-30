@@ -14,6 +14,9 @@ export function Dashboard() {
   const setCurrentChannel = useChat((state) => state.setCurrentChannel);
   const [servers, setServers] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
+  const [showCreateServer, setShowCreateServer] = useState(false);
+  const [newServerName, setNewServerName] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Fetch user's servers
   useEffect(() => {
@@ -58,6 +61,53 @@ export function Dashboard() {
     fetchChannels();
   }, [currentServer, currentChannel, setCurrentChannel]);
 
+  const handleCreateServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newServerName.trim() || !user) return;
+
+    setLoading(true);
+    try {
+      // Create server
+      const { data: serverData, error: serverError } = await supabase
+        .from('servers')
+        .insert({
+          name: newServerName,
+          owner_id: user.id,
+        })
+        .select();
+
+      if (serverError) throw serverError;
+      if (!serverData || serverData.length === 0) throw new Error('Failed to create server');
+
+      const newServer = serverData[0];
+
+      // Add user to server_members
+      const { error: memberError } = await supabase
+        .from('server_members')
+        .insert({
+          server_id: newServer.id,
+          user_id: user.id,
+        });
+
+      if (memberError) throw memberError;
+
+      // Create default channels
+      await supabase.from('channels').insert([
+        { server_id: newServer.id, name: 'general', is_voice: false },
+        { server_id: newServer.id, name: 'voice-lobby', is_voice: true },
+      ]);
+
+      // Update servers list
+      setServers([...servers, newServer]);
+      setCurrentServer(newServer);
+      setNewServerName('');
+      setShowCreateServer(false);
+    } catch (err) {
+      console.error('Error creating server:', err);
+    }
+    setLoading(false);
+  };
+
   const handleLogout = async () => {
     await signOut();
   };
@@ -83,6 +133,13 @@ export function Dashboard() {
             {server.name.charAt(0).toUpperCase()}
           </div>
         ))}
+        <button
+          onClick={() => setShowCreateServer(true)}
+          className="w-12 h-12 rounded-full bg-gray-700 hover:bg-green-600 text-gray-300 hover:text-white font-bold text-xl transition flex items-center justify-center"
+          title="Create Server"
+        >
+          +
+        </button>
         <div className="flex-1"></div>
         <button
           onClick={handleLogout}
@@ -94,27 +151,43 @@ export function Dashboard() {
 
       {/* Channel Sidebar */}
       <div className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
-        {currentServer && (
+        {currentServer ? (
           <>
             <div className="p-4 border-b border-gray-700">
               <h2 className="text-white font-bold text-lg">{currentServer.name}</h2>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {channels.map((channel) => (
-                <div
-                  key={channel.id}
-                  onClick={() => setCurrentChannel(channel)}
-                  className={`px-4 py-2 rounded cursor-pointer transition ${
-                    currentChannel?.id === channel.id
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-                  }`}
-                >
-                  # {channel.name}
-                </div>
-              ))}
+              {channels.length === 0 ? (
+                <div className="text-gray-400 text-sm">No channels yet</div>
+              ) : (
+                channels.map((channel) => (
+                  <div
+                    key={channel.id}
+                    onClick={() => setCurrentChannel(channel)}
+                    className={`px-4 py-2 rounded cursor-pointer transition ${
+                      currentChannel?.id === channel.id
+                        ? 'bg-gray-700 text-white'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                    }`}
+                  >
+                    {channel.is_voice ? '🎙️' : '#'} {channel.name}
+                  </div>
+                ))
+              )}
             </div>
           </>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-gray-400 text-center">
+              <p className="mb-4">No servers yet</p>
+              <button
+                onClick={() => setShowCreateServer(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+              >
+                Create Server
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -124,13 +197,74 @@ export function Dashboard() {
           <>
             <div className="border-b border-gray-700 p-4">
               <h1 className="text-white font-bold text-lg">
-                # {currentChannel.name}
+                {currentChannel.is_voice ? '🎙️' : '#'} {currentChannel.name}
               </h1>
             </div>
             <ChatWindow />
           </>
         )}
+        {!currentChannel && currentServer && (
+          <div className="flex items-center justify-center h-full text-gray-400">
+            Select a channel to start chatting
+          </div>
+        )}
+        {!currentServer && (
+          <div className="flex items-center justify-center h-full text-gray-400">
+            <div className="text-center">
+              <p className="mb-4">Create or join a server to get started</p>
+              <button
+                onClick={() => setShowCreateServer(true)}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+              >
+                Create Your First Server
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Create Server Modal */}
+      {showCreateServer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-8 rounded-lg w-full max-w-md">
+            <h2 className="text-2xl font-bold text-white mb-6">Create a Server</h2>
+            <form onSubmit={handleCreateServer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Server Name
+                </label>
+                <input
+                  type="text"
+                  value={newServerName}
+                  onChange={(e) => setNewServerName(e.target.value)}
+                  placeholder="My Awesome Community"
+                  className="w-full px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  required
+                />
+              </div>
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateServer(false);
+                    setNewServerName('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !newServerName.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition disabled:opacity-50"
+                >
+                  {loading ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
