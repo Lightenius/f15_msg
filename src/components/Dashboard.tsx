@@ -17,6 +17,7 @@ export function Dashboard() {
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [newServerName, setNewServerName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   // Fetch user's servers
   useEffect(() => {
@@ -66,7 +67,11 @@ export function Dashboard() {
     if (!newServerName.trim() || !user) return;
 
     setLoading(true);
+    setServerError(null);
+    
     try {
+      console.log('Creating server for user:', user.id, 'with name:', newServerName);
+      
       // Create server
       const { data: serverData, error: serverError } = await supabase
         .from('servers')
@@ -76,10 +81,16 @@ export function Dashboard() {
         })
         .select();
 
-      if (serverError) throw serverError;
-      if (!serverData || serverData.length === 0) throw new Error('Failed to create server');
+      if (serverError) {
+        console.error('Server creation error:', serverError);
+        throw new Error(serverError.message || 'Failed to create server');
+      }
+      if (!serverData || serverData.length === 0) {
+        throw new Error('Failed to create server - no data returned');
+      }
 
       const newServer = serverData[0];
+      console.log('Server created:', newServer);
 
       // Add user to server_members
       const { error: memberError } = await supabase
@@ -89,21 +100,32 @@ export function Dashboard() {
           user_id: user.id,
         });
 
-      if (memberError) throw memberError;
+      if (memberError) {
+        console.error('Member add error:', memberError);
+        throw new Error(memberError.message || 'Failed to add user to server');
+      }
 
       // Create default channels
-      await supabase.from('channels').insert([
+      const { error: channelsError } = await supabase.from('channels').insert([
         { server_id: newServer.id, name: 'general', is_voice: false },
         { server_id: newServer.id, name: 'voice-lobby', is_voice: true },
       ]);
 
+      if (channelsError) {
+        console.error('Channels creation error:', channelsError);
+        throw new Error(channelsError.message || 'Failed to create channels');
+      }
+
+      console.log('Server setup complete');
       // Update servers list
       setServers([...servers, newServer]);
       setCurrentServer(newServer);
       setNewServerName('');
       setShowCreateServer(false);
-    } catch (err) {
-      console.error('Error creating server:', err);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err) || 'Unknown error occurred';
+      console.error('Error creating server:', errorMsg);
+      setServerError(errorMsg);
     }
     setLoading(false);
   };
@@ -240,16 +262,26 @@ export function Dashboard() {
                   placeholder="My Awesome Community"
                   className="w-full px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
                   required
+                  disabled={loading}
                 />
               </div>
+              {serverError && (
+                <div className="p-3 bg-red-900/50 border border-red-600 rounded text-red-200 text-sm">
+                  <p className="font-semibold">Error:</p>
+                  <p>{serverError}</p>
+                  <p className="text-xs mt-2 opacity-75">Check browser console for more details</p>
+                </div>
+              )}
               <div className="flex gap-4">
                 <button
                   type="button"
                   onClick={() => {
                     setShowCreateServer(false);
                     setNewServerName('');
+                    setServerError(null);
                   }}
-                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
