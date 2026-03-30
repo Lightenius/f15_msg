@@ -197,7 +197,7 @@ export function Dashboard() {
           <>
             <div className="border-b border-gray-700 p-4">
               <h1 className="text-white font-bold text-lg">
-                {currentChannel.is_voice ? '🎙️' : '#'} {currentChannel.name}
+                {(currentChannel as any).is_voice ? '🎙️' : '#'} {currentChannel.name}
               </h1>
             </div>
             <ChatWindow />
